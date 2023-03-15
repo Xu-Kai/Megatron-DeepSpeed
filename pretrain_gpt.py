@@ -88,12 +88,42 @@ def model_provider(pre_process=True, post_process=True):
 
 
 def get_batch(data_iterator):
+    # """Generate a batch"""
+    # args = get_args()
+    # tokenizer = get_tokenizer()
+
+    # # Items and their type.
+    # keys = ['text']
+    # datatype = torch.int64
+
+    # # Broadcast data.
+    # if data_iterator is not None:
+    #     data = next(data_iterator)
+    # else:
+    #     data = None
+    # data_b = mpu.broadcast_data(keys, data, datatype)
+
+    # # Unpack.
+    # tokens_ = data_b['text'].long()
+    # labels = tokens_[:, 1:].contiguous()
+    # tokens = tokens_[:, :-1].contiguous()
+
+    # # Get the masks and postition ids.
+    # attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
+    #     tokens,
+    #     tokenizer.eod,
+    #     args.reset_position_ids,
+    #     args.reset_attention_mask,
+    #     args.eod_mask_loss)
+
+    # return tokens, labels, loss_mask, attention_mask, position_ids
+
+
     """Generate a batch"""
     args = get_args()
-    tokenizer = get_tokenizer()
 
-    # Items and their type.
-    keys = ['text']
+    keys = ['input_ids']
+
     datatype = torch.int64
 
     # Broadcast data.
@@ -101,22 +131,22 @@ def get_batch(data_iterator):
         data = next(data_iterator)
     else:
         data = None
+
     data_b = mpu.broadcast_data(keys, data, datatype)
 
-    # Unpack.
-    tokens_ = data_b['text'].long()
-    labels = tokens_[:, 1:].contiguous()
-    tokens = tokens_[:, :-1].contiguous()
 
-    # Get the masks and postition ids.
-    attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
-        tokens,
-        tokenizer.eod,
-        args.reset_position_ids,
-        args.reset_attention_mask,
-        args.eod_mask_loss)
+    tokens_ = data_b['input_ids'].long()
+    labels = tokens_.clone()
 
-    return tokens, labels, loss_mask, attention_mask, position_ids
+    positions_id = torch.arange(args.seq_length, dtype = torch.long, device = data_b['input_ids'].device)
+    positions_id = positions_id.unsqueeze(0).expand_as(data_b['input_ids'])
+    loss_mask = torch.ones_like(tokens_)
+    # attention_mask = torch.ones_like(tokens_)
+    attention_mask = torch.ones(tokens_.shape[1], dtype=torch.uint8, device = data_b['input_ids'].device)
+    # attention_mask = torch.ones(tokens_.shape, dtype=torch.uint8, device = data_b['input_ids'].device)
+
+    return tokens_, labels, loss_mask, attention_mask, positions_id
+
 
 def data_post_process(data, data_sampler_state_dict):
     args = get_args()
@@ -279,19 +309,24 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
     """Build train, valid, and test datasets."""
     args = get_args()
 
-    print_rank_0('> building train, validation, and test datasets '
-                 'for GPT ...')
-    train_ds, valid_ds, test_ds = build_train_valid_test_datasets(
-        data_prefix=args.data_path,
-        data_impl=args.data_impl,
-        splits_string=args.split,
-        train_valid_test_num_samples=train_val_test_num_samples,
-        seq_length=args.seq_length,
-        seed=args.seed,
-        skip_warmup=(not args.mmap_warmup))
+    # print_rank_0('> building train, validation, and test datasets '
+    #              'for GPT ...')
+    # train_ds, valid_ds, test_ds = build_train_valid_test_datasets(
+    #     data_prefix=args.data_path,
+    #     data_impl=args.data_impl,
+    #     splits_string=args.split,
+    #     train_valid_test_num_samples=train_val_test_num_samples,
+    #     seq_length=args.seq_length,
+    #     seed=args.seed,
+    #     skip_warmup=(not args.mmap_warmup))
+    # print_rank_0("> finished creating GPT datasets ...")
+
+    # return train_ds, valid_ds, test_ds
+    print_rank_0('> building train, validation, and test datasets ')
+    dataset_gpt = load_from_disk(args.data_path[0])
     print_rank_0("> finished creating GPT datasets ...")
 
-    return train_ds, valid_ds, test_ds
+    return dataset_gpt["train"], dataset_gpt["validation"], dataset_gpt["test"]
 
 
 def command_exists(cmd):

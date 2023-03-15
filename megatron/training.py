@@ -188,6 +188,7 @@ def pretrain(train_valid_test_dataset_provider,
                           model, optimizer, lr_scheduler,
                           train_data_iterator, valid_data_iterator)
     print_datetime('after training is done')
+    print_rank_0(f"********max cuda memory allocated : {torch.cuda.max_memory_allocated()/1024/1024/1024:.3f}GB************")
 
     if args.do_valid:
         prefix = 'the end of training for val data'

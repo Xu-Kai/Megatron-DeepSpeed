@@ -21,6 +21,9 @@ import random
 from megatron import get_args
 from megatron import mpu
 
+from torch.utils.data import DataLoader, DistributedSampler
+from transformers import default_data_collator
+
 
 def build_pretraining_data_loader(dataset, consumed_samples):
     """Buld dataloader given an input dataset."""
@@ -28,31 +31,53 @@ def build_pretraining_data_loader(dataset, consumed_samples):
     if dataset is None:
         return None
     args = get_args()
-
     # Megatron sampler
     if args.dataloader_type == 'single':
-        batch_sampler = MegatronPretrainingSampler(
-            total_samples=len(dataset),
-            consumed_samples=consumed_samples,
-            micro_batch_size=args.micro_batch_size,
-            data_parallel_rank=mpu.get_data_parallel_rank(),
-            data_parallel_size=mpu.get_data_parallel_world_size())
+        # batch_sampler = MegatronPretrainingSampler(
+        #     total_samples=len(dataset),
+        #     consumed_samples=consumed_samples,
+        #     micro_batch_size=args.micro_batch_size,
+        #     data_parallel_rank=mpu.get_data_parallel_rank(),
+        #     data_parallel_size=mpu.get_data_parallel_world_size())
+        batch_sampler = DistributedSampler(dataset,
+                                        shuffle=True,
+                                        num_replicas=mpu.get_data_parallel_world_size(),
+                                        rank= mpu.get_data_parallel_rank(),
+                                        )
+
+
     elif args.dataloader_type == 'cyclic':
-        batch_sampler = MegatronPretrainingRandomSampler(
-            total_samples=len(dataset),
-            consumed_samples=consumed_samples,
-            micro_batch_size=args.micro_batch_size,
-            data_parallel_rank=mpu.get_data_parallel_rank(),
-            data_parallel_size=mpu.get_data_parallel_world_size())
+        # batch_sampler = MegatronPretrainingRandomSampler(
+        #     total_samples=len(dataset),
+        #     consumed_samples=consumed_samples,
+        #     micro_batch_size=args.micro_batch_size,
+        #     data_parallel_rank=mpu.get_data_parallel_rank(),
+        #     data_parallel_size=mpu.get_data_parallel_world_size())
+        batch_sampler = DistributedSampler(dataset,
+                                        shuffle=True,
+                                        num_replicas=mpu.get_data_parallel_world_size(),
+                                        rank= mpu.get_data_parallel_rank(),
+                                        )
+
+
     else:
         raise Exception('{} dataloader type is not supported.'.format(
                 args.dataloader_type))
 
-    # Torch dataloader.
-    return torch.utils.data.DataLoader(dataset,
-                                       batch_sampler=batch_sampler,
-                                       num_workers=args.num_workers,
-                                       pin_memory=True)
+    train_loader = DataLoader(dataset,
+                              sampler=batch_sampler,
+                              collate_fn=default_data_collator,
+                              batch_size=args.micro_batch_size,
+                              num_workers=4)
+    return train_loader
+
+    # # Torch dataloader.
+    # return torch.utils.data.DataLoader(dataset,
+    #                                    batch_sampler=batch_sampler,
+    #                                    num_workers=args.num_workers,
+    #                                    pin_memory=True)
+
+
 
 class MegatronPretrainingSampler:
 
